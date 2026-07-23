@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>防衛医大 有事病床・後送シミュレーター v4</title>
+<style>
+:root{--bg:#0b1220;--panel:#121d31;--line:#2b3d5d;--text:#eef4ff;--muted:#a9b7ca;--ok:#54d68c;--warn:#ffc857;--bad:#ff6b6b;--blue:#54a7d9}
+*{box-sizing:border-box}
+body{margin:0;color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif;transition:background .5s}
+body.daymode{background:linear-gradient(145deg,#5d6269,#898f96)}
+body.nightmode{background:linear-gradient(145deg,#07101e,#101a2d)}
+header{padding:16px 18px 12px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#0b1220ee;backdrop-filter:blur(9px);z-index:5}
+h1{font-size:20px;margin:0 0 5px}.sub,.mini{color:var(--muted);font-size:11px}
+.toolbar{display:flex;gap:7px;flex-wrap:wrap;align-items:end;margin-top:10px}
+label{font-size:11px;color:#cbd7e8}
+button,select{background:#172640;color:var(--text);border:1px solid #3b5275;border-radius:9px;padding:8px 10px}
+button{cursor:pointer;font-weight:700}.primary{background:#1e63c5}.danger{background:#8e3540}
+main{padding:14px;max-width:1540px;margin:auto}
+.kpis{display:grid;grid-template-columns:repeat(8,minmax(115px,1fr));gap:8px;margin-bottom:11px}
+.kpi,.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:11px}
+.kpi b{font-size:20px;display:block}.kpi span{font-size:10px;color:var(--muted)}
+.layout{display:grid;grid-template-columns:1fr 330px;gap:11px}
+.board{display:grid;grid-template-columns:repeat(2,minmax(250px,1fr));gap:11px}
+.ward{background:var(--panel);border:1px solid var(--line);border-radius:13px;overflow:hidden}
+.wardhead{padding:10px 11px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between}.wardhead h2{font-size:15px;margin:0}
+.beds{padding:9px;display:grid;grid-template-columns:repeat(5,1fr);gap:6px;min-height:120px}
+.bed{min-height:53px;border-radius:8px;border:1px solid #354c6e;background:#162337;padding:5px;font-size:9px;position:relative;cursor:pointer}
+.bed.empty{opacity:.34}.id{font-weight:800;font-size:10px}.dx{color:#cad5e5;margin-top:3px}
+.tag{position:absolute;right:3px;top:3px;border-radius:9px;padding:2px 4px;font-size:7px;background:#385a87}.rehab{background:#206884}.wait{background:#8b6a1c}.critical{background:#8b3030}.civil{background:#54606f}.mil{background:#2d6f4e}
+.side{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:12px;align-self:start;position:sticky;top:120px}
+.eventlog{height:300px;overflow:auto;font-size:10px}.event{border-bottom:1px solid #293a55;padding:6px 0}
+.network{margin-top:12px}.networkgrid{display:grid;grid-template-columns:repeat(5,minmax(180px,1fr));gap:8px}
+.hospital{background:#101a2c;border:1px solid #354c6f;border-radius:11px;padding:10px}.hospital.full{border-color:var(--bad)}.hospital h3{font-size:12px;margin:0 0 5px}
+.bar{height:7px;background:#263650;border-radius:8px;overflow:hidden;margin-top:4px}.bar i{display:block;height:100%;background:var(--ok)}
+.overlay{position:fixed;inset:0;background:#020611d9;display:none;align-items:center;justify-content:center;z-index:20;padding:15px}
+.modal{width:min(900px,100%);max-height:90vh;overflow:auto;background:#101b2f;border:1px solid #40577b;border-radius:15px;padding:17px}
+.close{float:right}.modalgrid{display:grid;grid-template-columns:1fr 1fr;gap:13px}.step{padding:8px;border-left:3px solid #496d9f;margin:7px 0;background:#15233a}
+.toast{position:fixed;right:18px;bottom:18px;z-index:40;width:min(390px,calc(100% - 36px));background:#39181d;border:1px solid #ff7d87;border-radius:12px;padding:14px;display:none;box-shadow:0 12px 35px #0008}
+.toast.ok{background:#123221;border-color:#62d996}.toast b{display:block;margin-bottom:5px}
+table{width:100%;border-collapse:collapse;font-size:11px}th,td{border:1px solid #334968;padding:6px;text-align:left}th{background:#182944}
+.summaryOk,.summaryWarn,.summaryBad{padding:10px 12px;border-radius:8px}.summaryOk{background:#10261d;border-left:5px solid var(--ok)}.summaryWarn{background:#2c2511;border-left:5px solid var(--warn)}.summaryBad{background:#32171b;border-left:5px solid var(--bad)}
+@media(max-width:1050px){.kpis{grid-template-columns:repeat(4,1fr)}.layout{grid-template-columns:1fr}.side{position:static}.networkgrid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:650px){.board,.networkgrid{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,1fr)}.beds{grid-template-columns:repeat(4,1fr)}.modalgrid{grid-template-columns:1fr}}
+</style>
+</head>
+<body class="daymode">
+<header>
+<h1>防衛医大 有事病床・後送シミュレーター</h1>
+<div class="sub">標準：3秒＝3時間 ／ 拡大：1秒＝10分　｜　日勤 08:00–20:00／夜勤 20:00–08:00</div>
+<div class="toolbar">
+<label>ICU早期離床リハ<br><select id="icuRehab"><option value="full">全対象患者</option><option value="half">50％</option><option value="none">なし</option></select></label>
+<label>後送確保<br><select id="transferModel"><option value="ideal">理想</option><option value="limited">10％のみ確保</option></select></label>
+<label>ICU臨時拡張<br><select id="icuExpansion"><option value="0">なし（11床）</option><option value="5">＋5床（最大16床）</option></select></label>
+<label>追加安置室<br><select id="morgueExpansion"><option value="0">なし（2床）</option><option value="4">＋4床</option><option value="10">＋10床</option></select></label>
+<button class="primary" id="run">▶ 標準進行</button><button id="pause">⏸ 停止</button><button id="step">＋3時間</button>
+<button id="surge">自衛官負傷者10名到着</button><button id="summaryBtn">勤務帯サマリー</button><button class="danger" id="reset">初期化</button>
+</div>
+</header>
+
+<main>
+<section class="kpis">
+<div class="kpi"><b id="clock">D1 08:00</b><span>時刻</span></div>
+<div class="kpi"><b id="occ">0%</b><span>一般病床利用率</span></div>
+<div class="kpi"><b id="icuKpi">0 / 11</b><span>ICU</span></div>
+<div class="kpi"><b id="orKpi">0 / 15</b><span>手術室稼働</span></div>
+<div class="kpi"><b id="queueKpi">0</b><span>手術待機</span></div>
+<div class="kpi"><b id="blockedKpi">0</b><span>転院待ち</span></div>
+<div class="kpi"><b id="morgueKpi">0 / 2</b><span>霊安室・安置室</span></div>
+<div class="kpi"><b id="diagKpi">100%</b><span>IVR・CT・MRI・HD余力</span></div>
+</section>
+
+<div class="layout">
+<section class="board" id="board"></section>
+<aside class="side">
+<h3>次勤務帯への詰まり</h3><div id="bottleneck"></div>
+<h3>イベントログ</h3><div class="eventlog" id="log"></div>
+</aside>
+</div>
+
+<section class="network">
+<h2 style="font-size:16px">自動転院・後送ネットワーク</h2>
+<div class="networkgrid" id="network"></div>
+</section>
+</main>
+
+<div class="overlay" id="patientOverlay"><div class="modal">
+<button class="close" id="patientClose">閉じる</button><h2 id="patientTitle"></h2>
+<div class="modalgrid"><div id="patientDetail"></div><div><b>拡大モード</b><p class="mini">開くと標準進行は停止します。</p><button class="primary" id="microRun">▶ 拡大進行</button> <button id="microPause">停止</button><div id="patientTimeline"></div></div></div>
+</div></div>
+
+<div class="overlay" id="summaryOverlay"><div class="modal">
+<button class="close" id="summaryClose">閉じる</button><h2>勤務帯サマリー</h2>
+<div id="summaryComment"></div><p><button class="primary" id="downloadCsv">CSVを保存</button></p><div id="summaryTable"></div>
+</div></div>
+
+<div class="toast" id="toast"><b id="toastTitle"></b><span id="toastText"></span></div>
+
+<script>
+const wards=[
+ {id:'ICU',name:'ICU',baseCap:11},
+ {id:'ORTHO',name:'整形外科・形成外科病棟',baseCap:25},
+ {id:'EMERG',name:'救急・泌尿器科・脳外科病棟',baseCap:30},
+ {id:'MORGUE',name:'霊安室・安置室',baseCap:2}
+];
+const hospitals=[
+ {id:'MIHARA',name:'美原外科形成外科病院',kind:'civil',targets:['形成外科術後','熱傷','切断'],cap:10,daily:3,stay:14*1440},
+ {id:'SHIRATORI',name:'白鳥整形外科リハビリ病院',kind:'civil',targets:['整形外科術後','骨折','脊損'],cap:10,daily:3,stay:14*1440},
+ {id:'TOKOROZAWA',name:'所沢透析リハビリ病院',kind:'civil',targets:['透析','内科疾患','泌尿器科術後'],cap:10,daily:3,stay:14*1440},
+ {id:'IRUMA',name:'自衛隊入間病院',kind:'mil',targets:['自衛官'],cap:10,daily:10,stay:14*1440},
+ {id:'CHUO',name:'自衛隊中央病院',kind:'mil',targets:['自衛官'],cap:10,daily:10,stay:14*1440}
+];
+const civilianDx=[
+ ['整形外科術後','ORTHO'],['骨折','ORTHO'],['形成外科術後','ORTHO'],['熱傷','ORTHO'],['切断','ORTHO'],
+ ['脳外科術後','EMERG'],['泌尿器科術後','EMERG'],['透析','EMERG'],['内科疾患','EMERG']
+];
+const militaryDx=[
+ ['爆傷・多発外傷','EMERG'],['上肢切断','ORTHO'],['下肢切断','ORTHO'],['重症熱傷','ORTHO'],
+ ['頭部外傷','EMERG'],['脊損','EMERG'],['胸腹部外傷','EMERG']
+];
+let state;
+
+function cap(id){
+ if(id==='ICU')return 11+Number(document.getElementById('icuExpansion').value||0);
+ if(id==='MORGUE')return 2+Number(document.getElementById('morgueExpansion').value||0);
+ return wards.find(w=>w.id===id).baseCap;
+}
+function fmt(){const d=Math.floor(state.mins/1440)+1,m=state.mins%1440;return `D${d} ${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`}
+function log(s){state.log.unshift(`${fmt()}　${s}`);state.log=state.log.slice(0,150)}
+function countWard(id){return state.patients.filter(p=>!p.discharge&&p.ward===id).length}
+function isDay(){const h=(state.mins%1440)/60;return h>=8&&h<20}
+function theme(){document.body.classList.toggle('daymode',isDay());document.body.classList.toggle('nightmode',!isDay())}
+function approvalRate(){return document.getElementById('transferModel').value==='limited'?.10:1}
+function diagOpenRate(){return document.getElementById('transferModel').value==='limited'?.05:.45}
+function normalFlowRate(){return document.getElementById('transferModel').value==='limited'?.10:1}
+function makePatient(type,dx,ward,critical=false,initial=true){
+ const surgery=Math.random()<.55;
+ return {id:'P'+String(state.nextId++).padStart(3,'0'),type,dx,ward,originalWard:ward,critical,
+ phase:critical?'集中治療':'入院管理',age:0,remaining:(72+Math.random()*96)*60,rehab:false,icuRehab:false,
+ surgery,opDone:!surgery,orWait:surgery?0:null,transfer:false,transferTarget:null,discharge:false,dead:false,
+ deathHandled:false,diagnostic:['CT','MRI','IVR','HD'][Math.floor(Math.random()*4)],diagnosticDone:Math.random()<.35,
+ postopStable:false,initial};
+}
+function addCivilian(ward,initial=true){
+ const choices=civilianDx.filter(x=>x[1]===ward),d=choices[Math.floor(Math.random()*choices.length)];
+ const p=makePatient('民間人',d[0],ward,false,initial);state.patients.push(p);if(p.surgery)state.orQueue++;
+}
+function addMilitary(critical=Math.random()<.45){
+ const d=militaryDx[Math.floor(Math.random()*militaryDx.length)];
+ const p=makePatient('自衛官',d[0],critical?'ICU':d[1],critical,false);state.patients.push(p);if(p.surgery)state.orQueue++;
+}
+function resetHospitalState(){return Object.fromEntries(hospitals.map(h=>[h.id,{occupants:[],sentToday:0,lastDay:1,stopped:false}]))}
+function init(){
+ clearInterval(state?.timer);clearInterval(state?.micro);
+ state={mins:480,patients:[],nextId:1,orActive:0,orQueue:0,log:[],timer:null,micro:null,selected:null,
+ diagnostics:{IVR:0,CT:0,MRI:0,HD:0},deaths:0,hospitalState:resetHospitalState(),popupTimer:null};
+ for(let i=0;i<20;i++)addCivilian('ORTHO',true);
+ for(let i=0;i<24;i++)addCivilian('EMERG',true);
+ for(let i=0;i<9;i++){const p=makePatient('民間人',i%2?'脳外科術後':'整形外科術後','ICU',true,true);state.patients.push(p);if(p.surgery)state.orQueue++}
+ log('開始：整形・形成20/25床、救急・泌尿器・脳外24/30床、ICU 9/11床');
+ theme();render();
+}
+function showToast(title,text,ok=false){
+ const el=document.getElementById('toast');document.getElementById('toastTitle').textContent=title;document.getElementById('toastText').textContent=text;
+ el.classList.toggle('ok',ok);el.style.display='block';clearTimeout(state.popupTimer);state.popupTimer=setTimeout(()=>el.style.display='none',5000);
+}
+function setHospitalStop(hid,stopped,reason){
+ const hs=state.hospitalState[hid],h=hospitals.find(x=>x.id===hid);
+ if(stopped&&!hs.stopped){hs.stopped=true;showToast(`${h.name}への転院停止`,reason);log(`${h.name}への転院が停止しました：${reason}`)}
+ if(!stopped&&hs.stopped){hs.stopped=false;showToast(`${h.name}への転院再開`,'空床または日次依頼枠が回復しました。',true);log(`${h.name}への転院を再開しました`)}
+}
+function hospitalEligible(p,h){
+ if(p.dead||p.discharge||p.ward==='MORGUE'||p.transferTarget)return false;
+ if(h.kind==='civil'){
+  if(p.type!=='民間人'||p.age<3*1440||p.critical)return false;
+  return h.targets.some(t=>p.dx.includes(t));
+ }
+ return p.type==='自衛官'&&p.opDone&&p.postopStable&&p.rehab&&!p.critical&&p.age>=3*1440;
+}
+function processExternalBeds(mins){
+ const day=Math.floor(state.mins/1440)+1;
+ for(const h of hospitals){
+  const hs=state.hospitalState[h.id];
+  if(hs.lastDay!==day){hs.sentToday=0;hs.lastDay=day}
+  for(const o of hs.occupants)o.left-=mins;
+  const released=hs.occupants.filter(o=>o.left<=0).length;
+  if(released){hs.occupants=hs.occupants.filter(o=>o.left>0);log(`${h.name}で${released}床が空床化`)}
+  const full=hs.occupants.length>=h.cap,dayFull=hs.sentToday>=h.daily;
+  setHospitalStop(h.id,full||dayFull,full?'受入上限10床に達しました。':'本日の転院依頼上限に達しました。');
+ }
+}
+function automaticTransfers(){
+ const candidates=state.patients.filter(p=>!p.discharge&&!p.dead);
+ for(const p of candidates){
+  for(const h of hospitals){
+   if(!hospitalEligible(p,h))continue;
+   const hs=state.hospitalState[h.id];
+   if(hs.occupants.length>=h.cap||hs.sentToday>=h.daily)continue;
+   p.transfer=true;p.transferTarget=h.id;p.phase=`${h.name}へ転院依頼中`;
+   if(Math.random()<=approvalRate()){
+    hs.occupants.push({patientId:p.id,left:h.stay});hs.sentToday++;
+    p.discharge=true;p.phase=`${h.name}へ転院`;p.transfer=false;
+    log(`${p.id} ${h.name}へ自動転院`);
+   }else{
+    p.transferTarget=null;p.phase='転院先確保待ち';
+   }
+   break;
+  }
+ }
+}
+function tryMorgue(p){
+ if(countWard('MORGUE')<cap('MORGUE')){p.ward='MORGUE';p.phase='安置中';p.deathHandled=true;log(`${p.id}を霊安室・安置室へ移動`)}
+ else{p.phase='死亡・安置待ち';p.deathHandled=false;log(`${p.id} 霊安室満床のため元病床を占有`)}
+}
+function advance(mins){
+ state.mins+=mins;theme();processExternalBeds(mins);
+ const icuFull=countWard('ICU')>=cap('ICU'),freeOR=15-state.orActive;
+ const starts=Math.min(state.orQueue,Math.max(0,icuFull?Math.floor(freeOR*.2):freeOR),Math.max(1,Math.floor(mins/30)));
+ state.orActive+=starts;state.orQueue-=starts;if(starts)log(`${starts}名が手術室へ入室`);
+ const finishes=Math.min(state.orActive,Math.floor(mins/60)+(Math.random()<.4?1:0));state.orActive-=finishes;if(finishes)log(`${finishes}件の手術終了`);
+
+ for(const p of state.patients){
+  if(p.discharge)continue;
+  if(p.dead){if(!p.deathHandled&&p.ward!=='MORGUE')tryMorgue(p);continue}
+  p.age+=mins;
+
+  if(p.surgery&&!p.opDone){
+   p.orWait+=mins;
+   if(p.orWait>=720&&Math.random()<.5*(mins/720)){p.dead=true;p.phase='手術待機中死亡';state.deaths++;tryMorgue(p);continue}
+   if(p.orWait>=180&&Math.random()<mins/360){p.opDone=true;p.phase='術後管理';p.orWait=0}
+  }
+  if(!p.diagnosticDone&&Math.random()<diagOpenRate()*(mins/180)){
+   p.diagnosticDone=true;log(`${p.id} ${p.diagnostic}終了`);
+  }
+  if(p.ward==='ICU'&&p.age<=1440&&!p.icuRehab){
+   const mode=document.getElementById('icuRehab').value;
+   const eligible=mode==='full'||(mode==='half'&&Math.random()<.5);
+   if(eligible&&p.age>=360){p.icuRehab=true;p.rehab=true;p.phase='ICU早期離床リハ';log(`${p.id} ICU早期離床リハ開始`)}
+  }
+  p.remaining-=mins*(p.rehab?1.2:1);
+  if(p.ward==='ICU'&&p.age>=7*1440&&p.remaining<48*60){
+   const target=p.dx.includes('整形')||p.dx.includes('切断')||p.dx.includes('熱傷')?'ORTHO':'EMERG';
+   if(countWard(target)<cap(target)){p.ward=target;p.critical=false;p.phase='ICU退室後管理';log(`${p.id} ICUから${wards.find(w=>w.id===target).name}へ転棟`)}
+  }
+  if(!p.critical&&p.opDone&&p.age>=3*1440){p.postopStable=true;if(p.remaining<72*60){p.rehab=true;p.phase='リハビリ実施中'}}
+  if(p.remaining<=0&&p.age>=3*1440)p.phase='転院・退院調整可能';
+ }
+ automaticTransfers();
+
+ if(Math.random()<mins/240*normalFlowRate()){
+  const ward=Math.random()<.46?'ORTHO':'EMERG';
+  if(countWard(ward)<cap(ward)){addCivilian(ward,false);log('地域の民間患者1名を受け入れ')}
+ }
+ if(countWard('ICU')>=cap('ICU')&&Math.random()<mins/120){state.orQueue++;log('ICU満床により手術待機が増加')}
+ render();
+}
+function render(){
+ const active=state.patients.filter(p=>!p.discharge),general=active.filter(p=>p.ward==='ORTHO'||p.ward==='EMERG');
+ document.getElementById('clock').textContent=fmt();
+ document.getElementById('occ').textContent=Math.round(general.length/55*100)+'%';
+ document.getElementById('icuKpi').textContent=`${countWard('ICU')} / ${cap('ICU')}`;
+ document.getElementById('orKpi').textContent=`${state.orActive} / 15`;
+ document.getElementById('queueKpi').textContent=state.orQueue;
+ document.getElementById('blockedKpi').textContent=active.filter(p=>p.transfer||p.phase.includes('転院')).length;
+ document.getElementById('morgueKpi').textContent=`${countWard('MORGUE')} / ${cap('MORGUE')}`;
+ const diagFree=document.getElementById('transferModel').value==='limited'?5:Math.max(5,100-Object.values(state.diagnostics).reduce((a,b)=>a+b,0)*20);
+ document.getElementById('diagKpi').textContent=diagFree+'%';
+
+ document.getElementById('board').innerHTML=wards.map(w=>{
+  const pts=active.filter(p=>p.ward===w.id),c=cap(w.id),beds=[];
+  for(let i=0;i<c;i++){const p=pts[i];beds.push(p?`<div class="bed" onclick="openPatient('${p.id}')"><span class="id">${p.id}</span><span class="tag ${p.type==='自衛官'?'mil':'civil'}">${p.type}</span><div class="dx">${p.dx}</div>${p.rehab?'<span class="tag rehab" style="top:20px">リハ</span>':p.critical?'<span class="tag critical" style="top:20px">重症</span>':''}</div>`:`<div class="bed empty">空床</div>`)}
+  return `<article class="ward"><div class="wardhead"><div><h2>${w.name}</h2><span class="mini">${pts.length}/${c}床</span></div><b>${Math.round(pts.length/c*100)}%</b></div><div class="beds">${beds.join('')}</div></article>`;
+ }).join('');
+
+ document.getElementById('network').innerHTML=hospitals.map(h=>{
+  const hs=state.hospitalState[h.id],pct=hs.occupants.length/h.cap*100;
+  return `<div class="hospital ${hs.stopped?'full':''}"><h3>${h.name}</h3><div class="mini">${h.kind==='civil'?'民間人のみ':'自衛官・術後安定・リハ目的のみ'}</div><b>${hs.occupants.length}/${h.cap}床</b>　<span class="mini">本日 ${hs.sentToday}/${h.daily}件</span><div class="bar"><i style="width:${pct}%;background:${pct>=100?'var(--bad)':'var(--ok)'}"></i></div><div class="mini">${hs.stopped?'転院停止中':'自動照会中'}</div></div>`;
+ }).join('');
+
+ const stopped=hospitals.filter(h=>state.hospitalState[h.id].stopped).map(h=>h.name);
+ const reasons=[];
+ if(countWard('ICU')>=cap('ICU'))reasons.push('ICU満床');
+ if(state.orQueue>=5)reasons.push(`手術待機${state.orQueue}名`);
+ if(countWard('MORGUE')>=cap('MORGUE'))reasons.push('霊安室満床');
+ if(stopped.length)reasons.push(`転院停止：${stopped.join('、')}`);
+ document.getElementById('bottleneck').innerHTML=`<p class="${reasons.length?'summaryBad':'summaryOk'}"><b>${reasons.length?'受入余力低下':'受入可能'}</b><br>${reasons.length?reasons.join('／'):'重大な律速はありません。'}</p>`;
+ document.getElementById('log').innerHTML=state.log.map(x=>`<div class="event">${x}</div>`).join('');
+ if(state.selected)updatePatient();
+}
+function openPatient(id){clearInterval(state.timer);state.timer=null;state.selected=id;document.getElementById('patientOverlay').style.display='flex';updatePatient()}
+function updatePatient(){
+ const p=state.patients.find(x=>x.id===state.selected);if(!p)return;
+ document.getElementById('patientTitle').textContent=`${p.id}　${p.dx}`;
+ document.getElementById('patientDetail').innerHTML=`<p><b>区分：</b>${p.type}</p><p><b>病棟：</b>${wards.find(w=>w.id===p.ward)?.name||'転院済'}</p><p><b>状態：</b>${p.phase}</p><p><b>手術：</b>${p.surgery?(p.opDone?'終了':'待機中'):'不要'}</p><p><b>リハ：</b>${p.rehab?'実施中':'未開始'}</p><p><b>術後安定：</b>${p.postopStable?'はい':'いいえ'}</p>`;
+ document.getElementById('patientTimeline').innerHTML=`<div class="step">${fmt()}　${p.phase}</div><div class="step">転院候補：${p.type==='民間人'?'疾患別民間リハ病院':'入間病院・中央病院'}</div>`;
+}
+function summary(){
+ const active=state.patients.filter(p=>!p.discharge),stopped=hospitals.filter(h=>state.hospitalState[h.id].stopped).map(h=>h.name);
+ const freeGeneral=55-active.filter(p=>p.ward==='ORTHO'||p.ward==='EMERG').length,icuFree=cap('ICU')-countWard('ICU');
+ const blocked=active.filter(p=>p.transfer||p.phase.includes('転院')).length,reasons=[];
+ if(freeGeneral<=3)reasons.push(`一般病床空床${freeGeneral}`);
+ if(icuFree<=1)reasons.push(`ICU空床${icuFree}`);
+ if(state.orQueue>=5)reasons.push(`手術待機${state.orQueue}`);
+ if(stopped.length)reasons.push(`転院停止：${stopped.join('、')}`);
+ if(countWard('MORGUE')>=cap('MORGUE'))reasons.push('霊安室・安置室満床');
+ const level=reasons.length>=2?'困難':reasons.length?'条件付き':'可能';
+ return {shift:isDay()?'日勤':'夜勤',time:fmt(),level,reasons:reasons.join('／')||'重大な律速なし',freeGeneral,icuFree,orQueue:state.orQueue,blocked,
+ stopped:stopped.join('、')||'なし',morgue:`${countWard('MORGUE')}/${cap('MORGUE')}`,deaths:state.deaths};
+}
+let currentSummary;
+function showSummary(){
+ clearInterval(state.timer);state.timer=null;currentSummary=summary();
+ const cls=currentSummary.level==='可能'?'summaryOk':currentSummary.level==='条件付き'?'summaryWarn':'summaryBad';
+ document.getElementById('summaryComment').innerHTML=`<div class="${cls}"><b>次勤務帯の受入：${currentSummary.level}</b><p>${currentSummary.reasons}</p></div>`;
+ document.getElementById('summaryTable').innerHTML=`<table><tr><th>勤務帯</th><td>${currentSummary.shift}</td><th>時刻</th><td>${currentSummary.time}</td></tr><tr><th>一般病床空床</th><td>${currentSummary.freeGeneral}</td><th>ICU空床</th><td>${currentSummary.icuFree}</td></tr><tr><th>手術待機</th><td>${currentSummary.orQueue}</td><th>転院待ち</th><td>${currentSummary.blocked}</td></tr><tr><th>転院停止病院</th><td colspan="3">${currentSummary.stopped}</td></tr><tr><th>霊安室</th><td>${currentSummary.morgue}</td><th>死亡数</th><td>${currentSummary.deaths}</td></tr></table>`;
+ document.getElementById('summaryOverlay').style.display='flex';
+}
+function csvEscape(v){return `"${String(v).replaceAll('"','""')}"`}
+function downloadCsv(){
+ const r=[['勤務帯','時刻','次勤務帯受入','理由','一般病床空床','ICU空床','手術待機','転院待ち','転院停止病院','霊安室','死亡数'],
+ [currentSummary.shift,currentSummary.time,currentSummary.level,currentSummary.reasons,currentSummary.freeGeneral,currentSummary.icuFree,currentSummary.orQueue,currentSummary.blocked,currentSummary.stopped,currentSummary.morgue,currentSummary.deaths]];
+ const csv='\ufeff'+r.map(x=>x.map(csvEscape).join(',')).join('\n'),blob=new Blob([csv],{type:'text/csv;charset=utf-8'}),a=document.createElement('a');
+ a.href=URL.createObjectURL(blob);a.download=`勤務帯サマリー_${currentSummary.time.replaceAll(':','-').replaceAll(' ','_')}.csv`;a.click();URL.revokeObjectURL(a.href);
+}
+document.getElementById('run').onclick=()=>{clearInterval(state.timer);state.timer=setInterval(()=>advance(180),3000)};
+document.getElementById('pause').onclick=()=>{clearInterval(state.timer);state.timer=null};
+document.getElementById('step').onclick=()=>advance(180);
+document.getElementById('surge').onclick=()=>{for(let i=0;i<10;i++)addMilitary(i<4);log('自衛官負傷者10名が到着');render()};
+document.getElementById('reset').onclick=init;
+document.getElementById('icuExpansion').onchange=render;document.getElementById('morgueExpansion').onchange=render;
+document.getElementById('patientClose').onclick=()=>{clearInterval(state.micro);state.micro=null;state.selected=null;document.getElementById('patientOverlay').style.display='none'};
+document.getElementById('microRun').onclick=()=>{clearInterval(state.micro);state.micro=setInterval(()=>advance(10),1000)};
+document.getElementById('microPause').onclick=()=>{clearInterval(state.micro);state.micro=null};
+document.getElementById('summaryBtn').onclick=showSummary;document.getElementById('summaryClose').onclick=()=>document.getElementById('summaryOverlay').style.display='none';document.getElementById('downloadCsv').onclick=downloadCsv;
+init();
+</script>
+</body>
+</html>
